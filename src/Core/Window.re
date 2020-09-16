@@ -700,6 +700,7 @@ let create = (name: string, options: WindowCreateOptions.t) => {
 
   if (!options.decorated) {
     Sdl2.Window.setBordered(sdlWindow, false);
+    Revery_Native.hookResize(sdlWindow);
   };
 
   if (!options.resizable) {

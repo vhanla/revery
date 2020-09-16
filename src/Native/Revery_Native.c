@@ -13,6 +13,8 @@
 #include "ReveryWin32.h"
 #include <combaseapi.h>
 #include <windows.h>
+HHOOK myHook;
+
 #elif USE_COCOA
 #include "ReveryCocoa.h"
 #import "ReveryAppDelegate.h"
@@ -55,7 +57,54 @@ CAMLprim value revery_initializeWindow(value vWin) {
     */
     HWND window = (HWND)win;
     int current_style = GetWindowLong(window, GWL_STYLE);
-    SetWindowLong(window, GWL_STYLE, current_style | WS_CAPTION);
+    SetWindowLong(window, GWL_STYLE, current_style | WS_CAPTION | WS_MINIMIZEBOX | WS_SYSMENU);
+#else
+    UNUSED(win);
+#endif
+    CAMLreturn(Val_unit);
+}
+
+CAMLprim value revery_hookresize(value vWin) {
+    CAMLparam1(vWin);
+#ifdef USE_WIN32
+    LRESULT CALLBACK Resizer(int nCode, WPARAM wparam, LPARAM lparam)
+    {
+        if (nCode == HC_ACTION)
+        {
+            LPCWPRETSTRUCT pInfo = (LPCWPRETSTRUCT)lparam;
+            switch(pInfo->message)
+            {
+                case WM_WINDOWPOSCHANGED:
+                {
+                    WINDOWPLACEMENT wp = {};
+                    wp.length = sizeof(wp);
+                    GetWindowPlacement(pInfo->hwnd, &wp);
+                    if (wp.showCmd == SW_MAXIMIZE)
+                    {
+                        // resize to workarearect
+                        RECT rc;
+                        HMONITOR hMonitor;
+                        MONITORINFO mi;
+                        mi.cbSize = sizeof(mi);
+                        hMonitor = MonitorFromWindow(pInfo->hwnd, MONITOR_DEFAULTTOPRIMARY);
+                        GetMonitorInfo(hMonitor, &mi);
+                        rc = mi.rcWork;
+                        rc.bottom = rc.bottom-1; // minus 1px of height hacky fix, otherwise it is overriden to a bigger size
+                        SetWindowPos(pInfo->hwnd, NULL, rc.left, rc.top, abs(rc.right-rc.left),abs(rc.bottom-rc.top), 
+                                        SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
+                    }
+                   break; 
+                }
+                case WM_NCDESTROY:
+                {
+                    UnhookWindowsHookEx(myHook);
+                    break;  
+                }
+            }
+        }
+        return CallNextHookEx(myHook, nCode, wparam, lparam);
+    }
+    myHook = SetWindowsHookEx(WH_CALLWNDPROCRET, Resizer, GetModuleHandle(NULL), GetCurrentThreadId());
 #else
     UNUSED(win);
 #endif
